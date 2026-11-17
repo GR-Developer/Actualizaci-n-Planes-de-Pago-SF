@@ -1,6 +1,7 @@
 const { Router } = require("express");
 const sf = require("../services/salesforce");
 const { procesarAsset } = require("../logic/generarPagos");
+const { obtenerPlanAlquilerDeAsset, procesarCierreAsset } = require("../logic/actualizarPagosACerrados");
 const router = Router();
 
 // Prueba de conexión: GET /api/salesforce/ping
@@ -163,5 +164,92 @@ router.post("/assets/generarPagos", async (req, res, next) => {
         next(error);
     }
 });
+
+
+// POST /api/salesforce/assets/cerrarPagos   body: { "assetIds": [...], "dryRun": true }
+router.post("/assets/cerrarPagos", async (req, res, next) => {
+    try {
+        const { assetIds, dryRun: dryRunBody } = req.body || {};
+        const dryRun = dryRunBody !== false; // por defecto simula
+
+        if (!Array.isArray(assetIds) || !assetIds.length) {
+            return res.status(400).json({
+                error: 'Se requiere un array "assetIds" con al menos un ID.',
+                ejemplo: { assetIds: ["02iXXXXXXXXXXXXXXX"], dryRun: true },
+            });
+        }
+
+        console.log("═".repeat(70));
+        console.log(`  CIERRE MASIVO — ${assetIds.length} asset(s) — dryRun: ${dryRun}`);
+        console.log("═".repeat(70));
+
+        const resultados = [];
+        for (let idx = 0; idx < assetIds.length; idx++) {
+            const id = assetIds[idx];
+            console.log(`\n${"─".repeat(60)}\n  [${idx + 1}/${assetIds.length}] Asset: ${id}\n${"─".repeat(60)}`);
+            try {
+                resultados.push({ ok: true, ...(await procesarCierreAsset(id, dryRun)) });
+            } catch (err) {
+                console.log(`  ❌ ERROR: ${err.message}`);
+                if (err.details) {
+                    console.log(
+                        JSON.stringify(err.details, null, 2)
+                    );
+                }
+                resultados.push({ idAsset: id, ok: false, error: err.message, code: err.code || null });
+            }
+        }
+
+        const exitosos = resultados.filter((r) => r.ok);
+        const fallidos = resultados.filter((r) => !r.ok);
+
+        console.log("\n" + "═".repeat(70) + "\n  RESUMEN FINAL\n" + "═".repeat(70));
+        console.log(`  Assets procesados: ${resultados.length}  ✅ ${exitosos.length}  ❌ ${fallidos.length}`);
+        if (exitosos.length) {
+            console.table(
+                exitosos.map((r) => ({
+                    Asset: r.idAsset,
+                    Nombre: r.assetName,
+                    Oportunidad: r.opportunityName,
+                    PagosAlquiler: r.pagosAlquiler,
+                    PorCerrar: r.porCerrar.length,
+                    [dryRun ? "AbonosPorCrear" : "AbonosCreados"]: dryRun ? r.abonosPorCrear ?? 0 : r.abonosCreados,
+                }))
+            );
+        }
+        if (fallidos.length) {
+            console.table(fallidos.map((r) => ({ Asset: r.idAsset, Error: r.error, Código: r.code || "—" })));
+        }
+
+        res.status(200).json({
+            dryRun,
+            totalAssets: resultados.length,
+            exitosos: exitosos.length,
+            fallidos: fallidos.length,
+            resultados,
+        });
+    } catch (error) {
+        console.log("ERROR MASIVO:", error.message, error.details || "");
+        next(error);
+    }
+});
+
+
+// ── A CONFIRMAR ───────────────────────────────────────────────
+const ESTADO_PAGO_CERRADO = "Cerrado";   // valor de Estado__c cuando un pago está cerrado
+const CAMPO_MONTO_ABONO = "Monto__c";    // campo del monto dentro de Abono__c
+const CAMPOS_MONTO_PAGO = [              // se suman para el "monto total" del pago
+    "Monto__c",
+    "Monto_Mantenimiento__c",
+    "Monto_Agua__c",
+    "Monto_Estacionamiento__c",
+    "Monto_Otros__c",
+];
+
+const esCerrado = (p) =>
+    (p.Estado__c || "").toLowerCase() === ESTADO_PAGO_CERRADO.toLowerCase();
+
+const totalDelPago = (p) =>
+    Math.round(CAMPOS_MONTO_PAGO.reduce((sum, c) => sum + (Number(p[c]) || 0), 0) * 100) / 100;
 
 module.exports = router;

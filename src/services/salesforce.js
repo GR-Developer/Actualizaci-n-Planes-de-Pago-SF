@@ -152,8 +152,19 @@ async function createRecords(sobject, records) {
             body: JSON.stringify({ allOrNone: true, records: chunk }),
         });
 
+        console.log(
+            "RESULTADO SALESFORCE:",
+            JSON.stringify(results, null, 2)
+        );
+
         const failed = results.filter((r) => !r.success);
+
         if (failed.length) {
+            console.log(
+                "ERRORES SALESFORCE:",
+                JSON.stringify(failed, null, 2)
+            );
+
             const err = new Error("Error creando registros en Salesforce");
             err.status = 400;
             err.details = failed;
@@ -164,6 +175,32 @@ async function createRecords(sobject, records) {
     return created;
 }
 
+
+
+//ACTUALIZACIÓN DE PAGOS PARA QUE SEAN CERRADOS
+// Todos los campos de los pagos de un plan, del más antiguo al más nuevo (máx. 200)
+async function getPagosCompletosByPlan(idPlanPago) {
+    if (!ID_REGEX.test(idPlanPago)) throw new Error("idPlanPago inválido");
+    const data = await query(
+        `SELECT FIELDS(ALL) FROM Pago__c WHERE Plan_de_Pago__c = '${idPlanPago}' ORDER BY Fecha__c ASC LIMIT 200`
+    );
+    return data.records;
+}
+
+// Todos los campos de los abonos de un pago
+async function getAbonosByPago(idPago) {
+    if (!ID_REGEX.test(idPago)) throw new Error("idPago inválido");
+    const data = await query(
+        `SELECT FIELDS(ALL) FROM Abono__c WHERE Pago__c = '${idPago}' ORDER BY CreatedDate ASC LIMIT 200`
+    );
+    return data.records;
+}
+
+function describe(sobject) {
+    return sfRequest(`/sobjects/${sobject}/describe`);
+}
+
+
 module.exports = {
     query,
     getRecord,
@@ -171,5 +208,5 @@ module.exports = {
     updateRecord,
     getPagosByPlan,
     getPlanesByOpportunity,
-    createRecords,
+    createRecords, getPagosCompletosByPlan, getAbonosByPago, describe
 };

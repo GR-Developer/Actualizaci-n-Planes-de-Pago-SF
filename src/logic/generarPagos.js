@@ -5,7 +5,7 @@
 const sf = require("../services/salesforce");
 const { parseFecha, formatFecha, addMonthsWithDay, mesKey } = require("../utils/fechas");
 
-const NOMBRE_ALQUILER_REGEX = /^ALQUILER\s*#?\s*(\d+)\s*$/i;
+const NOMBRE_ALQUILER_REGEX = /^PAGO\s*#?\s*(\d+)\s*$/i;
 const RT_PLAN_ALQUILER = "0126g000001P0eQAAS";
 
 function numeroDePago(name) {
@@ -215,7 +215,7 @@ async function procesarAsset(idAsset, dryRun = true) {
         const numero = siguienteNumero++;
         console.log(`   mes ${mesKey(fecha)} (${formatFecha(fecha)}) → ALQUILER ${numero}`);
         nuevos.push({
-            Name: `ALQUILER ${numero}`,
+            Name: `PAGO ${numero}`,
             Plan_de_Pago__c: planId,
             Descripci_n__c: "ALQUILER",
             Estado__c: "Pendiente",
